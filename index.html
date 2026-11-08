@@ -61,6 +61,17 @@ html,body{max-width:100%;overflow-x:clip}main{overflow-x:visible;min-width:0}but
 .badge.type-daily{background:#064e3b55;color:#a7f3d0;border:1px solid #05966944}
 .badge.rest-day{background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f6}
 
+
+/* Rest reward dialog & choices */
+#restRewardDialog{width:min(500px,calc(100% - 24px));max-width:500px}
+#restRewardDialog .modal-body{overflow-x:hidden}
+.rest-choice-btn{display:flex;align-items:center;gap:10px;width:100%;max-width:100%;box-sizing:border-box;border:1px solid #3b82f6;border-radius:12px;background:#183658;color:var(--text);padding:12px 14px;font-size:13px;text-align:left;white-space:normal;line-height:1.45;transition:background .2s,border-color .2s;cursor:pointer}
+.rest-choice-btn:hover{background:#234774;border-color:#60a5fa}
+.rest-choice-icon{font-size:18px;flex:none}
+.rest-choice-body{min-width:0;flex:1;overflow:hidden}
+.rest-choice-title{display:block;font-weight:600;color:#e2edff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rest-choice-meta{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+
 /* Модификаторы карточек в Прогрессе */
 .progress-bonus{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:12px;margin-left:8px}
 .progress-bonus.positive{background:#064e3b66;color:#34d399;border:1px solid #059669}
@@ -89,13 +100,13 @@ html,body{max-width:100%;overflow-x:clip}main{overflow-x:visible;min-width:0}but
 <dialog id="restRewardDialog">
   <div class="modal-head">
     <h2>🎉 Награда за устойчивый темп!</h2>
-    <button aria-label="Закрыть" class="icon" data-close="">×</button>
+    <button aria-label="Закрыть" class="icon" data-action="skipRest">×</button>
   </div>
   <div class="modal-body">
-    <p id="restRewardText">Вы выполняли все ежедневные подзадачи этой цели 3 дня подряд! В награду цель получила бонусный рейтинг, а вы можете выбрать одну задачу, чтобы сегодня отдохнуть от неё без потери прогресса.</p>
-    <div id="restRewardChoices" style="display:grid;gap:8px;margin:16px 0;"></div>
+    <p id="restRewardText">Вы выполняли все ежедневные подзадачи этой цели 3 дня подряд! В награду цель получила бонусный рейтинг, а вы можете выбрать одну задачу, чтобы завтра отдохнуть от неё без потери прогресса:</p>
+    <div id="restRewardChoices" style="display:grid;gap:9px;margin:16px 0;max-width:100%;overflow-x:hidden;"></div>
     <div class="decision-actions">
-      <button class="outline" data-action="skipRest">Спасибо, выполню всё сам</button>
+      <button class="outline" data-action="skipRest" style="width:100%;">Спасибо, выполню всё сам</button>
     </div>
   </div>
 </dialog>
@@ -144,12 +155,12 @@ function checkRestRewards(){
   const d=dayKey();
   for(const root of state.tasks.filter(t=>t.outcome==='active')){
     const str=calcStreaks(root);
-    if(str.eligibleRestReward && root.lastRewardDay!==d){
-      const items=entries().filter(e=>e.root===root&&e.t.kind==='daily'&&e.available&&!e.t.finalDone&&e.t.restDay!==d);
+    if(str.eligibleRestReward && root.lastRewardStreak!==str.fullStreak && root.lastRewardDay!==d){
+      const items=entries().filter(e=>e.root===root&&e.t.kind==='daily'&&e.available&&!e.t.finalDone);
       if(items.length>0){
         currentRewardRoot=root;
-        $('restRewardText').innerHTML='Отличная работа по цели <strong>«'+esc(root.title)+'»</strong>! Вы выполняли все подзадачи 3 дня подряд (+1% к прогрессу). Выберите одну подзадачу, которую сегодня можно пропустить и отдохнуть — прогресс не пострадает:';
-        $('restRewardChoices').innerHTML=items.map(e=>'<button class="primary" data-action="grantRest" data-task-id="'+e.t.id+'" style="text-align:left;padding:10px 14px;border-radius:10px;justify-content:flex-start;">🏖 Отдохнуть от: <strong>'+esc(e.t.title)+'</strong> ('+short(e.t.estimate)+')</button>').join('');
+        $('restRewardText').innerHTML='Отличная работа по цели <strong>«'+esc(root.title)+'»</strong>! Вы выполняли все подзадачи 3 дня подряд (+1% к прогрессу). Выберите одну подзадачу, которую завтра можно пропустить и отдохнуть — прогресс не пострадает:';
+        $('restRewardChoices').innerHTML=items.map(e=>'<button type="button" class="rest-choice-btn" data-action="grantRest" data-id="'+e.t.id+'"><span class="rest-choice-icon">🏖</span><div class="rest-choice-body"><span class="rest-choice-title" title="'+esc(e.t.title)+'">Отдохнуть от: '+esc(e.t.title)+'</span><span class="rest-choice-meta">Время задачи: '+short(e.t.estimate)+'</span></div></button>').join('');
         show('restRewardDialog');
         return;
       }
@@ -161,6 +172,8 @@ function applyRest(taskId){
   if(!e||!currentRewardRoot)return;
   const t=e.t;
   const d=dayKey();
+  // Назначаем отдых на следующий цикл/день (или на сегодня если день ещё не закрыт)
+  t.pendingRest=true;
   t.restDay=d;
   t.doneDay=d;
   t.status='done';
@@ -171,7 +184,18 @@ function applyRest(taskId){
   close('restRewardDialog');
   currentRewardRoot=null;
   commit();
-  toast('Заслуженный отдых активирован! Подзадача зачтена.');
+  toast('Заслуженный отдых активирован! Подзадача освобождена.');
+}
+function skipRestReward(){
+  if(currentRewardRoot){
+    const d=dayKey();
+    currentRewardRoot.lastRewardDay=d;
+    currentRewardRoot.lastRewardStreak=calcStreaks(currentRewardRoot).fullStreak;
+  }
+  close('restRewardDialog');
+  currentRewardRoot=null;
+  commit();
+  toast('Принято! Продолжаем в стандартном темпе.');
 }
 
 function tick(){if(ticking)return;ticking=true;try{let changed=resetDays();const ts=Date.now();for(const e of entries()){const t=e.t;if(!e.available||t.kind!=='daily')continue;if(t.status==='running'&&elapsed(t,ts)>=t.estimate){const end=t.startedAt+Math.max(0,t.estimate-t.elapsed);t.elapsed=t.estimate;t.startedAt=null;t.status='awaiting';t.responseUntil=end+10000;changed=true}if(t.status==='awaiting'&&(!t.responseUntil||ts>=t.responseUntil)){lock(t);if(timerDecisionId===t.id)close('timerDecision');changed=true}}if($('manualDecision').open){const m=find(manualDecisionId)?.t;if(!m||!find(m.id).available||['awaiting','locked'].includes(m.status)){close('manualDecision');manualDecisionId=null}}if($('subDecision').open){const sub=find(subDecisionId)?.t;$('subCancel').hidden=!sub||sub.deadline<=ts}if(changed){snapshot();save();render()}updateLive(ts);pendingDialogs()}finally{ticking=false}}
@@ -215,6 +239,7 @@ function extend(days){const t=find(decisionId)?.t;if(!t||t.kind!=='root'||t.outc
 $('taskForm').addEventListener('submit',submitTask);$('taskKind').addEventListener('change',editorFields);$('deleteTask').addEventListener('click',()=>removeTask(editorId));$('sortSelect').addEventListener('change',e=>{sort=e.target.value;render()});
 document.addEventListener('click',ev=>{const cb=ev.target.closest('[data-close]');if(cb){const d=cb.closest('dialog');if(d.id==='decision'){const t=find(decisionId)?.t;if(t)t.snoozed=true}d.close();return}const nav=ev.target.closest('[data-view]');if(nav){view=nav.dataset.view;render();return}const tab=ev.target.closest('[data-tab]');if(tab){doneTab=tab.dataset.tab;render();return}const b=ev.target.closest('[data-action]');if(!b||b.disabled)return;const a=b.dataset.action,id=b.dataset.id,t=id?find(id)?.t:null;
 if(a==='add')openEditor(null,null,view==='today');else if(a==='addChild'&&t)openEditor(null,id);else if(a==='edit'&&t)openEditor(id);else if(a==='expand'&&t){t.expanded=!t.expanded;save();render()}else if(a==='pin'&&t){t.pinned=!t.pinned;commit()}else if((a==='complete'||a==='toggleDone')&&t)requestComplete(t);else if(a==='finishPrompt'&&t){if(t.kind==='root')askRoot(t);else askSub(t)}else if(a==='start'&&t)start(t);else if(a==='pauseActive'){const x=active();if(x){pause(x);commit()}}else if(a==='completeActive'){const x=active();if(x)requestComplete(x)}
+else if(a==='grantRest'){applyRest(id)}else if(a==='skipRest'){skipRestReward()}
 else if(a==='manualYes'){tick();const x=find(manualDecisionId)?.t;close('manualDecision');if(x&&x.status!=='awaiting'&&x.status!=='locked')complete(x);manualDecisionId=null}else if(a==='cancelResult'){cancelResult(b.closest('dialog').id)}
 else if(a==='goalDone'){const x=find(decisionId)?.t;if(x?.kind==='root'&&x.outcome==='active')terminal(x,'done')}else if(a==='goalFail'){const x=find(decisionId)?.t;if(x?.kind==='root'&&x.outcome==='active')terminal(x,'failed')}
 else if(a==='openExtension'){const x=find(decisionId)?.t;if(x){$('extensionText').textContent='«'+x.title+'». Использовано продлений: '+x.extensions+' из 3.';show('extension')}}else if(a==='extend')extend(Number(b.dataset.days));else if(a==='subYes'||a==='subNo'){const x=find(subDecisionId)?.t;if(x&&x.kind==='milestone')terminal(x,a==='subYes'?'done':'failed')}
@@ -223,7 +248,7 @@ else if(a==='permanent'&&t&&view==='done'&&t.kind==='daily'&&isDone(t)&&!t.final
 else if(a==='delete'&&t)removeTask(id);else if(a==='help'||a==='budgetInfo')show(a);else if(a==='settings'){close('help');show('settings')}else if(a==='export')download('orbit-backup-'+dateKey(Date.now())+'.json',JSON.stringify(state,null,2));else if(a==='import')$('importFile').click();else if(a==='legacy')download('orbit-old-reminders.json',JSON.stringify(state.legacyReminders,null,2));else if(a==='clear'&&confirm('Удалить все цели и ежедневные дела?')){state={version:4,day:dayKey(),tasks:[],daily:[],legacyReminders:[]};for(const d of document.querySelectorAll('dialog[open]'))d.close();localStorage.removeItem(OLD);commit();toast('Данные удалены')}
 });
 $('importFile').addEventListener('change',async ev=>{const f=ev.target.files[0];if(!f)return;try{const next=normalize(JSON.parse(await f.text()));if(!confirm('Заменить текущие данные импортированными?'))return;download('orbit-before-import.json',JSON.stringify(state,null,2));state=next;close('settings');resetDays();commit();tick();toast('Данные импортированы')}catch(e){toast('Не удалось импортировать: '+e.message)}finally{ev.target.value=''}});
-for(const d of document.querySelectorAll('dialog')){d.addEventListener('cancel',ev=>{if(d.id==='timerDecision'||d.id==='subDecision'&&(find(subDecisionId)?.t.deadline||0)<=Date.now())ev.preventDefault();else if(d.id==='manualDecision')manualDecisionId=null;else if(d.id==='decision'){const t=find(decisionId)?.t;if(t)t.snoozed=true}})}
+for(const d of document.querySelectorAll('dialog')){d.addEventListener('cancel',ev=>{if(d.id==='timerDecision'||d.id==='subDecision'&&(find(subDecisionId)?.t.deadline||0)<=Date.now())ev.preventDefault();else if(d.id==='manualDecision')manualDecisionId=null;else if(d.id==='restRewardDialog')skipRestReward();else if(d.id==='decision'){const t=find(decisionId)?.t;if(t)t.snoozed=true}})}
 // Snoozing lasts only until a reload. The decision remains reachable using the goal checkmark.
 entries().forEach(e=>{e.t.snoozed=false});document.querySelector('[data-action="help"].help-star').innerHTML=icon('info');document.querySelectorAll('[data-action="budgetInfo"]').forEach(b=>b.innerHTML=icon('info'));
 resetDays();snapshot();save();render();tick();setInterval(tick,200);document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();render()}});window.addEventListener('pageshow',()=>{tick();render()});
